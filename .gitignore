@@ -1,2 +1,5 @@
 .vscode/
 wal.log
+aof.log
+.zig-cache/
+zig-out/
