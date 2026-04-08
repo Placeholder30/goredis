@@ -6,13 +6,13 @@ const Mutex = std.Io.Mutex;
 const builtin = @import("builtin");
 const Storage = @import("storage.zig").Storage;
 pub const Op = enum {
-    GET,
-    SET,
-    DEL,
-    EXPIRE,
+    get,
+    set,
+    del,
+    expire,
 };
 pub const Entry = struct {
-    Op: Op,
+    op: Op,
     key: []const u8,
     value: EntryValue,
 };
@@ -41,9 +41,8 @@ pub const EntryValue = union(enum) {
         const value_len: u32 = @intCast(encoded_value.len);
         //[op][tag][keylen][value_len][key]?[value]
         switch (op) {
-            .SET => {},
-            .DEL => {},
-            .GET => {},
+            .get => {},
+            .del => {},
             else => {},
         }
         const buffer_layout_total = 1 + 1 + 4 + 4 + key_len + value_len;

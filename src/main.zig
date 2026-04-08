@@ -17,7 +17,7 @@ pub fn main(init: std.process.Init) !void {
     const aof = try cwd.openFile(io, "aof.log", .{ .mode = .read_write });
     var storage = Storage.init(allocator, io, &mutex, aof);
     const string: []const u8 = "malik";
-    var entry = Entry{ .Op = .SET, .key = "name", .value = .{ .string = string } };
+    var entry = Entry{ .op = .set, .key = "name", .value = .{ .string = string } };
     try storage.set(&entry);
     _ = try storage.get("name");
 }
@@ -38,8 +38,9 @@ test "get and put test" {
     var mutex = std.Io.Mutex.init;
     const cwd = std.Io.Dir.cwd();
     const aof = try cwd.openFile(io, "test.log", .{ .mode = .read_write });
+
     var store = Storage.init(alloc, io, &mutex, aof);
-    var entry = Entry{ .key = "age", .value = EntryValue{ .int = 32 }, .Op = .GET };
+    var entry = Entry{ .key = "age", .value = EntryValue{ .int = 32 }, .op = .get };
     defer store.deinit();
     try store.set(&entry);
     const got = try store.get("age");

@@ -40,7 +40,7 @@ pub const Storage = struct {
     }
 
     pub fn set(self: *Storage, entry: *Entry) !void {
-        const encoded_res = try entry.value.encode(self.allocator, entry.key, entry.Op);
+        const encoded_res = try entry.value.encode(self.allocator, entry.key, entry.op);
         try writer(self.io, self.aof, encoded_res);
 
         try self.mem.put(entry.key, encoded_res);
@@ -64,7 +64,7 @@ pub const Storage = struct {
             };
             return Entry{
                 .key = key,
-                .Op = op,
+                .op = op,
                 .value = entryValue,
             };
         }
