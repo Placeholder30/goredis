@@ -3,3 +3,4 @@ wal.log
 aof.log
 .zig-cache/
 zig-out/
+test.log
