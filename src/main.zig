@@ -6,7 +6,7 @@ const Mutex = std.Io.Mutex;
 const builtin = @import("builtin");
 const Storage = @import("storage.zig").Storage;
 const Entry = @import("entry.zig").Entry;
-const EntryValue = @import("entry.zig").Value;
+const EntryValue = @import("entry.zig").EntryValue;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -15,11 +15,22 @@ pub fn main(init: std.process.Init) !void {
     var mutex: Mutex = .init;
     const cwd = std.Io.Dir.cwd();
     const aof = try cwd.openFile(io, "aof.log", .{ .mode = .read_write });
+
     var storage = Storage.init(allocator, io, &mutex, aof);
-    const string: []const u8 = "malik";
-    var entry = Entry{ .op = .set, .key = "name", .value = .{ .string = string } };
-    try storage.set(&entry);
-    _ = try storage.get("name");
+    // const val: i64 = 1888888;
+    // const entryVal = EntryValue{ .int = val };
+    // const entry = Entry{ .key = "todo", .op = .expire, .value = entryVal };
+
+    // try storage.set(entry);
+    try storage.replayLog();
+
+    // const res = try storage.get("todo");
+    // if (res) |en| {
+    //     std.debug.print("{s} -> \n", .{en.key});
+    //     if (en.value) |valery| {
+    //         std.debug.print("{any}", .{valery});
+    //     }
+    // }
 }
 
 pub fn writer(io: Io, file: Io.File, bytes: []u8) !void {
@@ -40,12 +51,12 @@ test "get and put test" {
     const aof = try cwd.openFile(io, "test.log", .{ .mode = .read_write });
 
     var store = Storage.init(alloc, io, &mutex, aof);
-    var entry = Entry{ .key = "age", .value = EntryValue{ .int = 32 }, .op = .get };
+    const entry = Entry{ .key = "age", .value = EntryValue{ .int = 32 }, .op = .get };
     defer store.deinit();
-    try store.set(&entry);
+    try store.set(entry);
     const got = try store.get("age");
     const expected: i64 = 32;
     if (got) |well| {
-        try testing.expectEqual(expected, well.value.int);
+        try testing.expectEqual(expected, well.value.?.int);
     }
 }
