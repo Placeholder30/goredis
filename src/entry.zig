@@ -15,6 +15,14 @@ pub const Entry = struct {
     op: Op,
     key: []const u8,
     value: ?EntryValue,
+
+    pub fn init(op: Op, key: []const u8, value: ?EntryValue) Entry {
+        return .{
+            .op = op,
+            .key = key,
+            .value = value,
+        };
+    }
 };
 
 pub const EntryValue = union(enum) {

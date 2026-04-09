@@ -24,58 +24,6 @@ pub const Storage = struct {
             .aof = aof,
         };
     }
-
-    pub fn replayLog(self: *Storage) !void {
-        var buffer: [1]u8 = undefined;
-        var reader = self.aof.reader(self.io, &buffer);
-        while (true) {
-            const meta_data = try reader.interface.takeByte();
-            const op: Op = @enumFromInt(meta_data);
-            reader.interface.seek -= 1;
-            switch (op) {
-                .set, .expire => {
-                    const header = try reader.interface.readAlloc(self.allocator, 10);
-                    defer self.allocator.free(header);
-                    const key_bytes = header[2..6];
-                    const value_bytes = (header[6..10]);
-                    const key_len = std.mem.bytesToValue(u32, key_bytes);
-                    const value_len = std.mem.bytesToValue(u32, value_bytes);
-
-                    const body = try reader.interface.readAlloc(self.allocator, key_len + value_len);
-                    defer self.allocator.free(body);
-
-                    const key = try self.allocator.dupe(u8, body[0..key_len]);
-                    var buff = try self.allocator.alloc(u8, header.len + body.len);
-                    @memcpy(buff[0..header.len], header);
-                    @memcpy(buff[header.len..], body);
-                    if (op == .expire) {
-                        try self.expiryMap.put(key, buff);
-                        std.debug.print("expire -> {s}\n", .{key});
-                        std.debug.print("expire -> {any}\n", .{buff});
-                    } else {
-                        std.debug.print("set -> {s}\n", .{key});
-                        std.debug.print("set -> {any}\n", .{buff});
-                        try self.mem.put(key, buff);
-                    }
-                },
-                .del => {
-                    const header = try reader.interface.readAlloc(self.allocator, 5);
-                    defer self.allocator.free(header);
-                    const key_bytes = header[1..5];
-                    const key_len = std.mem.bytesToValue(u32, key_bytes);
-
-                    std.debug.print("del -> {d}\n", .{key_len});
-                    const key = try reader.interface.readAlloc(self.allocator, key_len);
-                    defer self.allocator.free(key);
-
-                    std.debug.print("del key-> {s}<-\n", .{key});
-                    _ = self.mem.remove(key);
-                },
-                .get => unreachable,
-            }
-        }
-    }
-
     pub fn deinit(self: *Storage) void {
         var it = self.mem.iterator();
         while (it.next()) |entry| {
@@ -196,6 +144,57 @@ pub const Storage = struct {
                 @memcpy(buffer[10 + key.len ..], encoded_value);
                 return buffer;
             },
+        }
+    }
+
+    pub fn replayLog(self: *Storage) !void {
+        var buffer: [1]u8 = undefined;
+        var reader = self.aof.reader(self.io, &buffer);
+        while (true) {
+            const meta_data = try reader.interface.takeByte();
+            const op: Op = @enumFromInt(meta_data);
+            reader.interface.seek -= 1;
+            switch (op) {
+                .set, .expire => {
+                    const header = try reader.interface.readAlloc(self.allocator, 10);
+                    defer self.allocator.free(header);
+                    const key_bytes = header[2..6];
+                    const value_bytes = (header[6..10]);
+                    const key_len = std.mem.bytesToValue(u32, key_bytes);
+                    const value_len = std.mem.bytesToValue(u32, value_bytes);
+
+                    const body = try reader.interface.readAlloc(self.allocator, key_len + value_len);
+                    defer self.allocator.free(body);
+
+                    const key = try self.allocator.dupe(u8, body[0..key_len]);
+                    var buff = try self.allocator.alloc(u8, header.len + body.len);
+                    @memcpy(buff[0..header.len], header);
+                    @memcpy(buff[header.len..], body);
+                    if (op == .expire) {
+                        try self.expiryMap.put(key, buff);
+                        std.debug.print("expire -> {s}\n", .{key});
+                        std.debug.print("expire -> {any}\n", .{buff});
+                    } else {
+                        std.debug.print("set -> {s}\n", .{key});
+                        std.debug.print("set -> {any}\n", .{buff});
+                        try self.mem.put(key, buff);
+                    }
+                },
+                .del => {
+                    const header = try reader.interface.readAlloc(self.allocator, 5);
+                    defer self.allocator.free(header);
+                    const key_bytes = header[1..5];
+                    const key_len = std.mem.bytesToValue(u32, key_bytes);
+
+                    std.debug.print("del -> {d}\n", .{key_len});
+                    const key = try reader.interface.readAlloc(self.allocator, key_len);
+                    defer self.allocator.free(key);
+
+                    std.debug.print("del key-> {s}<-\n", .{key});
+                    _ = self.mem.remove(key);
+                },
+                .get => unreachable,
+            }
         }
     }
 };
