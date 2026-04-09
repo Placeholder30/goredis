@@ -23,8 +23,10 @@ pub fn main(init: std.process.Init) !void {
             return err;
         },
     };
+    // const now = std.Io.Clock.real.now(io).addDuration(.fromSeconds(5000)).toSeconds();
 
     var storage = Storage.init(allocator, io, &mutex, aof);
+    // try storage.expire(.{ .key = "do", .op = .expire, .value = .{ .int = now } });
     // defer storage.deinit();
     storage.replayLog() catch |err| switch (err) {
         error.EndOfStream => {},

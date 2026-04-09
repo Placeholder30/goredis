@@ -171,6 +171,9 @@ pub const Storage = struct {
                     @memcpy(buff[0..header.len], header);
                     @memcpy(buff[header.len..], body);
                     if (op == .expire) {
+                        const timestamp_bytes = buff[header.len + key.len ..];
+                        const expiry_time = std.mem.bytesToValue(i64, timestamp_bytes);
+                        if (getCurrentTime(self.io) > expiry_time) continue; //don't build map if already expired
                         try self.expiryMap.put(key, buff);
                         std.debug.print("expire -> {s}\n", .{key});
                         std.debug.print("expire -> {any}\n", .{buff});
@@ -198,3 +201,8 @@ pub const Storage = struct {
         }
     }
 };
+
+pub fn getCurrentTime(io: Io) i64 {
+    const time_stamp: std.Io.Timestamp = .now(io, .real);
+    return time_stamp.toSeconds();
+}
