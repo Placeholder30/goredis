@@ -9,16 +9,15 @@ const Op = @import("entry.zig").Op;
 pub const Storage = struct {
     allocator: Allocator,
     io: Io,
-    mutex: *std.Io.Mutex,
     mem: std.StringHashMap([]u8),
     expiryMap: std.StringHashMap([]u8),
     aof: Io.File,
 
-    pub fn init(alloc: Allocator, io: Io, mutex: *Mutex, aof: Io.File) Storage {
+    pub fn init(alloc: Allocator, io: Io, aof: Io.File) Storage {
         return .{
             .allocator = alloc,
             .io = io,
-            .mutex = mutex,
+
             .mem = std.StringHashMap([]u8).init(alloc),
             .expiryMap = std.StringHashMap([]u8).init(alloc),
             .aof = aof,

@@ -15,7 +15,6 @@ pub fn main(init: std.process.Init) !void {
     // defer assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
 
-    var mutex: Mutex = .init;
     const cwd = std.Io.Dir.cwd();
     const aof = cwd.openFile(io, "aof.log", .{ .mode = .read_write }) catch |err| switch (err) {
         error.FileNotFound => try cwd.createFile(io, "aof", .{ .read = true, .truncate = false }),
@@ -25,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     };
     // const now = std.Io.Clock.real.now(io).addDuration(.fromSeconds(5000)).toSeconds();
 
-    var storage = Storage.init(allocator, io, &mutex, aof);
+    var storage = Storage.init(allocator, io, aof);
     // try storage.expire(.{ .key = "do", .op = .expire, .value = .{ .int = now } });
     // defer storage.deinit();
     storage.replayLog() catch |err| switch (err) {
@@ -41,12 +40,11 @@ const testing = std.testing;
 
 test "set and get returns stored value" {
     const io = testing.io;
-    var mutex = std.Io.Mutex.init;
     const cwd = std.Io.Dir.cwd();
 
     const aof = try cwd.openFile(io, "test.log", .{ .mode = .read_write });
 
-    var store = Storage.init(alloc, io, &mutex, aof);
+    var store = Storage.init(alloc, io, aof);
     defer store.deinit();
 
     const key = "ogunfe";
@@ -69,12 +67,11 @@ test "set and get returns stored value" {
 
 test "del" {
     const io = std.testing.io;
-    var mutex = std.Io.Mutex.init;
     const cwd = std.Io.Dir.cwd();
 
     const aof = try cwd.openFile(io, "test.log", .{ .mode = .read_write });
 
-    var store = Storage.init(alloc, io, &mutex, aof);
+    var store = Storage.init(alloc, io, aof);
     defer store.deinit();
 
     const value = EntryValue{ .string = "iphone" };
