@@ -12,8 +12,9 @@ pub const Storage = struct {
     mem: std.StringHashMap([]u8),
     expiryMap: std.StringHashMap([]u8),
     aof: Io.File,
+    writer: Io.File.Writer,
 
-    pub fn init(alloc: Allocator, io: Io, aof: Io.File) Storage {
+    pub fn init(alloc: Allocator, io: Io, aof: Io.File, writer: Io.File.Writer) Storage {
         return .{
             .allocator = alloc,
             .io = io,
@@ -21,6 +22,7 @@ pub const Storage = struct {
             .mem = std.StringHashMap([]u8).init(alloc),
             .expiryMap = std.StringHashMap([]u8).init(alloc),
             .aof = aof,
+            .writer = writer,
         };
     }
     pub fn deinit(self: *Storage) void {
@@ -38,7 +40,10 @@ pub const Storage = struct {
 
     pub fn set(self: *Storage, entry: Entry) !void {
         const encoded_res = try encode(self.allocator, entry);
-        const stats = try self.aof.stat(self.io);
+        const stats = try self.writer.file.stat(self.io);
+        // try self.writer.file.writePositional(self.io, encoded_res, stats.size);
+        // try self.writer.flush();
+
         try self.aof.writePositionalAll(self.io, encoded_res, stats.size);
         try self.mem.put(entry.key, encoded_res);
     }
@@ -96,9 +101,7 @@ pub const Storage = struct {
     }
 
     ///set -> [op][tag][keylen][value_len][key][value]
-    ///
     /// del -> [op][keylen][key]
-    ///
     /// expire ->[op][tag][key_len][value_len][key][value]
     pub fn encode(alloc: Allocator, entry: Entry) ![]u8 {
         const key = entry.key;
@@ -172,7 +175,7 @@ pub const Storage = struct {
                     if (op == .expire) {
                         const timestamp_bytes = buff[header.len + key.len ..];
                         const expiry_time = std.mem.bytesToValue(i64, timestamp_bytes);
-                        if (getCurrentTime(self.io) > expiry_time) continue; //don't build map if already expired
+                        if (getCurrentTime(self.io).toMilliseconds() > expiry_time) continue; //don't build map if already expired
                         try self.expiryMap.put(key, buff);
                         std.debug.print("expire -> {s}\n", .{key});
                         std.debug.print("expire -> {any}\n", .{buff});
@@ -195,13 +198,13 @@ pub const Storage = struct {
                     std.debug.print("del key-> {s}<-\n", .{key});
                     _ = self.mem.remove(key);
                 },
-                .get => unreachable,
+                .get => unreachable, // we never write gets to the aof
             }
         }
     }
 };
 
-pub fn getCurrentTime(io: Io) i64 {
+pub fn getCurrentTime(io: Io) std.Io.Timestamp {
     const time_stamp: std.Io.Timestamp = .now(io, .real);
-    return time_stamp.toSeconds();
+    return time_stamp;
 }

@@ -7,14 +7,15 @@ const builtin = @import("builtin");
 const Storage = @import("storage.zig").Storage;
 const Entry = @import("entry.zig").Entry;
 const EntryValue = @import("entry.zig").EntryValue;
+const Server = @import("server.zig").Server;
 // const assert = std.debug.assert;
 
-pub fn main(init: std.process.Init) !void {
-    const io = init.io;
+pub fn main(_: std.process.Init) !void {
     var gpa: std.heap.DebugAllocator(.{ .verbose_log = if (builtin.mode == .Debug) true else false }) = .init;
     // defer assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
-
+    var threaded_io: Io.Threaded = .init(alloc, .{});
+    const io = threaded_io.io();
     const cwd = std.Io.Dir.cwd();
     const aof = cwd.openFile(io, "aof.log", .{ .mode = .read_write }) catch |err| switch (err) {
         error.FileNotFound => try cwd.createFile(io, "aof", .{ .read = true, .truncate = false }),
@@ -23,16 +24,32 @@ pub fn main(init: std.process.Init) !void {
         },
     };
     // const now = std.Io.Clock.real.now(io).addDuration(.fromSeconds(5000)).toSeconds();
+    var writer_buff: [4096]u8 = undefined;
+    const writer: std.Io.File.Writer = .init(aof, io, &writer_buff);
 
-    var storage = Storage.init(allocator, io, aof);
-    // try storage.expire(.{ .key = "do", .op = .expire, .value = .{ .int = now } });
-    // defer storage.deinit();
-    storage.replayLog() catch |err| switch (err) {
-        error.EndOfStream => {},
-        else => {
-            return err;
-        },
-    };
+    var storage = Storage.init(allocator, io, aof, writer);
+    try storage.set(.{ .key = "do", .op = .set, .value = .{ .string = "hello world" } });
+    defer storage.deinit();
+
+    // storage.replayLog() catch |err| switch (err) {
+    //     error.EndOfStream => {},
+    //     else => {
+    //         return err;
+    //     },
+    // };
+    // try startServer(io);
+
+}
+fn startServer(io: Io) !void {
+    const server = try Server.init(io, "127.0.0.1", 8080);
+
+    var listener = try server.listen(io);
+    while (true) {
+        var connection = try listener.accept(io);
+        defer connection.close(io);
+        var write = connection.writer(io, &.{});
+        _ = &write.interface;
+    }
 }
 
 const alloc = std.testing.allocator;
