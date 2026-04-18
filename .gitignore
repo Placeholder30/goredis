@@ -5,3 +5,4 @@ aof.log
 zig-out/
 test.log
 *.log
+lldb_pretty_printers.py
