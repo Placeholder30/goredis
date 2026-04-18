@@ -40,15 +40,17 @@ pub const Storage = struct {
         }
         self.expiryMap.deinit();
     }
-
     pub fn set(self: *Storage, entry: Entry) ![]const u8 {
         const encoded_res = try encode(self.allocator, entry);
         const stats = try self.writer.file.stat(self.io);
-        // try self.writer.file.writePositional(self.io, encoded_res, stats.size);
-        // try self.writer.flush();
 
+        // TODO  configurable flushing to reduce sys calls we can implement tx with this.
         try self.aof.writePositionalAll(self.io, encoded_res, stats.size);
         const key = try self.allocator.dupe(u8, entry.key);
+        if (self.mem.fetchRemove(key)) |old| {
+            self.allocator.free(old.key);
+            self.allocator.free(old.value);
+        }
         try self.mem.put(key, encoded_res);
         return "ok";
     }
@@ -195,7 +197,7 @@ pub const Storage = struct {
         };
         return entry_value;
     }
-    //TODO fix leak from loop it allocates gibberish while rebuilding the log 288bytes
+
     pub fn replayLog(self: *Storage) !void {
         log.warn("replaying append only log\n", .{});
         var buffer: [1]u8 = undefined;
@@ -223,11 +225,19 @@ pub const Storage = struct {
                     if (op == .expire) {
                         const timestamp_bytes = buff[header.len + key.len ..];
                         const expiry_time = std.mem.bytesToValue(i64, timestamp_bytes);
-                        if (getCurrentTime(self.io).toMilliseconds() > expiry_time) continue; //don't build map if already expired
+                        if (getCurrentTime(self.io).toMilliseconds() > expiry_time) {
+                            self.allocator.free(key);
+                            self.allocator.free(buff);
+                            continue;
+                        } //don't build map if already expired
                         try self.expiryMap.put(key, buff);
                         log.debug("exp -> key={s} val={any}\n", .{ key, buff });
                     } else {
                         log.debug("set -> key= {s} val={any}", .{ key, buff });
+                        if (self.mem.fetchRemove(key)) |old| {
+                            self.allocator.free(old.key);
+                            self.allocator.free(old.value);
+                        }
                         try self.mem.put(key, buff);
                     }
                 },
@@ -245,7 +255,6 @@ pub const Storage = struct {
                 },
                 .get => unreachable, // we never write gets to the aof
             }
-            log.debug("endoofloop", .{});
         }
     }
 };
