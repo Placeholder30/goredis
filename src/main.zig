@@ -10,36 +10,40 @@ const Server = @import("server.zig").Server;
 const http = std.http;
 const MAX_HEADER_SIZE = 8 * 1024; // 8 KB
 const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
-const log = std.log.scoped(.debug);
-// const assert = std.debug.assert;
+const log = std.log.scoped(.main);
+const assert = std.debug.assert;
+const handleRequest = @import("server.zig").handleRequest;
 
 pub fn main(_: std.process.Init) !void {
-    var gpa: std.heap.DebugAllocator(.{ .verbose_log = if (builtin.mode == .Debug) true else false }) = .init;
-    // defer assert(gpa.deinit() == .ok);
+    var gpa: std.heap.DebugAllocator(.{ .verbose_log = if (builtin.mode == .Debug) true else false, .retain_metadata = true, .safety = true }) = .init;
+    defer assert(gpa.deinit() == .ok);
     const allocator = gpa.allocator();
-    var threaded_io: Io.Threaded = .init(allocator, .{});
+    var threaded_io: Io.Threaded = .init_single_threaded;
     const io = threaded_io.io();
     const cwd: std.Io.Dir = .cwd();
+
     const aof = cwd.openFile(io, "aof.log", .{ .mode = .read_write }) catch |err| switch (err) {
-        error.FileNotFound => try cwd.createFile(io, "aof", .{ .read = true, .truncate = false }),
+        error.FileNotFound => try cwd.createFile(io, "./src/aof.log", .{ .read = true, .truncate = false }),
         else => {
             return err;
         },
     };
+    defer aof.close(io);
+    errdefer aof.close(io);
 
     var writer_buff: [4096]u8 = undefined;
     const writer: std.Io.File.Writer = .init(aof, io, &writer_buff);
 
     var storage: Storage = .init(allocator, io, aof, writer);
+    defer storage.deinit();
+    errdefer storage.deinit();
 
-    // defer storage.deinit();
-
-    // storage.replayLog() catch |err| switch (err) {
-    //     error.EndOfStream => {},
-    //     else => {
-    //         return err;
-    //     },
-    // };
+    storage.replayLog() catch |err| switch (err) {
+        error.EndOfStream => {},
+        else => {
+            return err;
+        },
+    };
     try startServer(io, allocator, &storage);
 }
 fn startServer(io: Io, _: Allocator, storage: *Storage) !void {
@@ -49,84 +53,9 @@ fn startServer(io: Io, _: Allocator, storage: *Storage) !void {
     while (true) {
         const connection = try listener.accept(io);
         try handleRequest(io, connection, storage);
+        defer connection.close(io);
         errdefer connection.close(io);
     }
-}
-
-fn handleRequest(io: Io, connection: Io.net.Stream, storage: *Storage) !void {
-    var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
-    defer arena.deinit();
-    const alloca = arena.allocator();
-
-    var reader_buff: [4096]u8 = undefined;
-    var writer_buff: [4096]u8 = undefined;
-    var write = connection.writer(io, &writer_buff);
-    const out = &write.interface;
-
-    var connection_reader = connection.reader(io, &reader_buff);
-    const in = &connection_reader.interface;
-    var serv: http.Server = .init(in, out);
-    const request = try serv.receiveHead();
-    // _ = request;
-
-    const content_length = request.head.content_length orelse return error.MissingContentLength;
-    if (content_length == 0) return error.EmptyBody;
-
-    const body = try in.take(content_length);
-    const entry = try storage.parseRequest(alloca, body);
-    switch (entry.op) {
-        .del => {
-            const res = try storage.del(entry);
-            log.debug("{s}", .{res});
-            try handleResponse(res, serv);
-        },
-        .expire => {
-            const res = try storage.expire(entry);
-            log.debug("{s}", .{res});
-            try handleResponse(res, serv);
-        },
-        .get => {
-            const res = try storage.get(entry.key);
-            log.debug("{any}>>>>\n", .{res});
-            if (res) |val| {
-                try handleGetResponse(val.value.?, serv);
-            } else try handleResponse("nil", serv);
-        },
-        .set => {
-            const res = try storage.set(entry);
-            log.debug("{s}", .{res});
-            try handleResponse(res, serv);
-        },
-    }
-}
-
-fn handleGetResponse(res: EntryValue, serv: http.Server) !void {
-    try serv.out.print(
-        "HTTP/1.1 200 OK\r\n" ++
-            // "Content-Length: {d}\r\n" ++
-            "Connection: close\r\n" ++
-            "\r\n",
-        .{},
-    );
-    _ = switch (res) {
-        .boolean => |b| try serv.out.print("{}", .{b}),
-        .float => |f| try serv.out.print("{}", .{f}),
-        .int => |i| try serv.out.print("{}", .{i}),
-        .string => |i| try serv.out.print("{s}", .{i}),
-    };
-    try serv.out.flush();
-}
-
-fn handleResponse(res: []const u8, serv: http.Server) !void {
-    try serv.out.print(
-        "HTTP/1.1 200 OK\r\n" ++
-            "Content-Length: {d}\r\n" ++
-            "Connection: close\r\n" ++
-            "\r\n" ++
-            "{s}\n",
-        .{ res.len, res },
-    );
-    try serv.out.flush();
 }
 
 const alloc = std.testing.allocator;
