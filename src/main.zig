@@ -23,7 +23,7 @@ pub fn main(_: std.process.Init) !void {
     const cwd: std.Io.Dir = .cwd();
 
     const aof = cwd.openFile(io, "aof.log", .{ .mode = .read_write }) catch |err| switch (err) {
-        error.FileNotFound => try cwd.createFile(io, "./src/aof.log", .{ .read = true, .truncate = false }),
+        error.FileNotFound => try cwd.createFile(io, "aof.log", .{ .read = true, .truncate = false }),
         else => {
             return err;
         },
