@@ -32,7 +32,7 @@ pub fn main(_: std.process.Init) !void {
 
     var storage: Storage = .init(allocator, io, aof, writer);
 
-    defer storage.deinit();
+    // defer storage.deinit();
 
     // storage.replayLog() catch |err| switch (err) {
     //     error.EndOfStream => {},
@@ -87,7 +87,7 @@ fn handleRequest(io: Io, connection: Io.net.Stream, storage: *Storage) !void {
         },
         .get => {
             const res = try storage.get(entry.key);
-            log.debug("{any}", .{res});
+            log.debug("{any}>>>>\n", .{res});
             if (res) |val| {
                 try handleGetResponse(val.value.?, serv);
             } else try handleResponse("nil", serv);
@@ -105,15 +105,14 @@ fn handleGetResponse(res: EntryValue, serv: http.Server) !void {
         "HTTP/1.1 200 OK\r\n" ++
             // "Content-Length: {d}\r\n" ++
             "Connection: close\r\n" ++
-            "\r\n" ++
-            "{s}\n",
-        .{res},
+            "\r\n",
+        .{},
     );
     _ = switch (res) {
         .boolean => |b| try serv.out.print("{}", .{b}),
         .float => |f| try serv.out.print("{}", .{f}),
         .int => |i| try serv.out.print("{}", .{i}),
-        .string => |i| try serv.out.print("{}", .{i}),
+        .string => |i| try serv.out.print("{s}", .{i}),
     };
     try serv.out.flush();
 }

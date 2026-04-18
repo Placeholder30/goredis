@@ -46,12 +46,18 @@ pub const Storage = struct {
         // try self.writer.flush();
 
         try self.aof.writePositionalAll(self.io, encoded_res, stats.size);
+        log.debug("key={any} value={any}\n", .{ entry.key, entry.value });
         try self.mem.put(entry.key, encoded_res);
         return "ok";
     }
 
     pub fn get(self: *Storage, key: []const u8) !?Entry {
         const maybe_val = self.mem.get(key);
+        var it = self.mem.iterator();
+        while (it.next()) |val| {
+            log.debug("key ={s} value = {any}\n", .{ val.key_ptr.*, val.value_ptr.* });
+        }
+
         if (maybe_val) |value| {
             return try self.decode(value);
         }
@@ -97,6 +103,7 @@ pub const Storage = struct {
             .float => .{ .float = std.mem.bytesToValue(f64, value) },
             .int => .{ .int = std.mem.bytesToValue(i64, value) },
         };
+        log.debug("decoder\n {any}", .{entryValue});
         return Entry{
             .key = key,
             .op = op,
@@ -153,7 +160,7 @@ pub const Storage = struct {
         }
     }
     pub fn parseRequest(_: Storage, alloc: std.mem.Allocator, msg: []const u8) !Entry {
-        log.debug("{s}", .{msg});
+        log.debug("raw req > {s}\n", .{msg});
         const raw_json = try std.json.parseFromSliceLeaky(RawEntry, alloc, msg, .{ .parse_numbers = true, .ignore_unknown_fields = true });
 
         const raw_op = raw_json.op;
@@ -161,8 +168,9 @@ pub const Storage = struct {
         const op = std.meta.stringToEnum(Op, raw_op) orelse
             return error.InvalidOperation;
 
-        if ((op == .set or op != .expire) and raw_value == null) return error.ValueRequired;
+        if ((op == .set or op == .expire) and raw_value == null) return error.ValueRequired;
         const key = raw_json.key;
+        log.debug("parsed -> {s} \n", .{key});
         const query = blk: switch (op) {
             .get, .del => Entry.init(op, key, null),
             .set, .expire => {
@@ -249,7 +257,7 @@ pub fn getCurrentTime(io: Io) std.Io.Timestamp {
 }
 
 const RawEntry = struct {
-    key: []const u8,
     op: []const u8 = "",
+    key: []const u8,
     value: ?std.json.Value = null,
 };
