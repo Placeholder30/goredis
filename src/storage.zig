@@ -5,7 +5,8 @@ const Mutex = std.Io.Mutex;
 const Entry = @import("entry.zig").Entry;
 const EntryValue = @import("entry.zig").EntryValue;
 const Op = @import("entry.zig").Op;
-
+const log = std.log.scoped(.debug);
+const assert = std.debug.assert;
 pub const Storage = struct {
     allocator: Allocator,
     io: Io,
@@ -38,7 +39,7 @@ pub const Storage = struct {
         self.expiryMap.deinit();
     }
 
-    pub fn set(self: *Storage, entry: Entry) !void {
+    pub fn set(self: *Storage, entry: Entry) ![]const u8 {
         const encoded_res = try encode(self.allocator, entry);
         const stats = try self.writer.file.stat(self.io);
         // try self.writer.file.writePositional(self.io, encoded_res, stats.size);
@@ -46,6 +47,7 @@ pub const Storage = struct {
 
         try self.aof.writePositionalAll(self.io, encoded_res, stats.size);
         try self.mem.put(entry.key, encoded_res);
+        return "ok";
     }
 
     pub fn get(self: *Storage, key: []const u8) !?Entry {
@@ -56,18 +58,20 @@ pub const Storage = struct {
         return null;
     }
 
-    pub fn del(self: *Storage, entry: Entry) !bool {
+    pub fn del(self: *Storage, entry: Entry) ![]const u8 {
         const val = try encode(self.allocator, entry);
         const stats = try self.aof.stat(self.io);
         try self.aof.writePositionalAll(self.io, val, stats.size);
-        return self.mem.remove(entry.key);
+        const ok = self.mem.remove(entry.key);
+        if (ok) return "ok" else return "err";
     }
 
-    pub fn expire(self: *Storage, entry: Entry) !void {
+    pub fn expire(self: *Storage, entry: Entry) ![]const u8 {
         const val = try encode(self.allocator, entry);
         const pos = try self.aof.stat(self.io);
         try self.aof.writePositionalAll(self.io, val, pos.size);
         try self.expiryMap.put(entry.key, val);
+        return "ok";
     }
 
     pub fn decode(self: *Storage, encoded_text: []u8) !?Entry {
@@ -148,6 +152,41 @@ pub const Storage = struct {
             },
         }
     }
+    pub fn parseRequest(_: Storage, alloc: std.mem.Allocator, msg: []const u8) !Entry {
+        log.debug("{s}", .{msg});
+        const raw_json = try std.json.parseFromSliceLeaky(RawEntry, alloc, msg, .{ .parse_numbers = true, .ignore_unknown_fields = true });
+
+        const raw_op = raw_json.op;
+        const raw_value = raw_json.value;
+        const op = std.meta.stringToEnum(Op, raw_op) orelse
+            return error.InvalidOperation;
+
+        if ((op == .set or op != .expire) and raw_value == null) return error.ValueRequired;
+        const key = raw_json.key;
+        const query = blk: switch (op) {
+            .get, .del => Entry.init(op, key, null),
+            .set, .expire => {
+                assert(raw_value != null);
+                const value = raw_json.value orelse unreachable;
+                const entry_value = try parseEntryValue(value);
+                break :blk Entry.init(op, key, entry_value);
+            },
+        };
+        log.debug("{any}> \n", .{query});
+        return query;
+    }
+    fn parseEntryValue(value: std.json.Value) !EntryValue {
+        const entry_value = switch (value) {
+            .bool => EntryValue{ .boolean = value.bool },
+            .integer => EntryValue{ .int = value.integer },
+            .float => EntryValue{ .float = value.float },
+            .string => EntryValue{ .string = value.string },
+            else => {
+                return error.UnsupportedDataType;
+            },
+        };
+        return entry_value;
+    }
 
     pub fn replayLog(self: *Storage) !void {
         var buffer: [1]u8 = undefined;
@@ -208,3 +247,9 @@ pub fn getCurrentTime(io: Io) std.Io.Timestamp {
     const time_stamp: std.Io.Timestamp = .now(io, .real);
     return time_stamp;
 }
+
+const RawEntry = struct {
+    key: []const u8,
+    op: []const u8 = "",
+    value: ?std.json.Value = null,
+};
